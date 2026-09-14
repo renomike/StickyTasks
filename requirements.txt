@@ -1,0 +1,6 @@
+# StickyTasks runtime dependency.
+# PySide6 is the official Qt 6 binding for Python (LGPL).
+PySide6>=6.5
+
+# Development only:
+#   pip install pytest
