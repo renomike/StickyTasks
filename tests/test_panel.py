@@ -255,3 +255,37 @@ def test_no_appbar_is_registered_off_windows(panel):
     panel.settings.reserve_screen_space = True
     panel.apply_geometry()
     assert panel._appbar is None  # AppBar is Windows-only; must degrade quietly
+
+
+def test_empty_list_area_uses_the_dark_theme(panel):
+    """An empty list must not show the platform's default light background.
+
+    The scroll viewport is a separate widget from the QScrollArea and does not
+    inherit its background, so it needs targeting by name in the stylesheet.
+    This only shows up when no cards cover it.
+    """
+    from PySide6.QtGui import QColor
+
+    from stickytasks.ui.theme import BG
+
+    assert panel._cards == []
+    assert panel.scroll.viewport().objectName() == "TaskScrollViewport"
+    assert panel.list_host.objectName() == "TaskList"
+
+    sheet = panel.styleSheet()
+    assert "QWidget#TaskScrollViewport" in sheet
+    assert "QWidget#TaskList" in sheet
+
+    panel.show()
+    panel.resize(380, 400)
+    shot = panel.grab().toImage()
+    # Sample well inside the list area, below the header and filter rows.
+    sampled = QColor(shot.pixel(shot.width() // 2, int(shot.height() * 0.7)))
+    expected = QColor(BG)
+    assert sampled.lightness() < 100, f"list area is light ({sampled.name()}), expected {BG}"
+    for got, want in zip(
+        (sampled.red(), sampled.green(), sampled.blue()),
+        (expected.red(), expected.green(), expected.blue()),
+    ):
+        assert abs(got - want) <= 8, f"list background {sampled.name()} != {BG}"
+    panel.hide()

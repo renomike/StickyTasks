@@ -84,6 +84,7 @@ def panel_stylesheet(font_size: int = 10) -> str:
     QPushButton:hover {{ background: {BG_HOVER}; }}
     QPushButton:default {{ background: {ACCENT}; border-color: {ACCENT}; color: #ffffff; }}
     QScrollArea {{ background: {BG}; border: none; }}
+    QWidget#TaskScrollViewport, QWidget#TaskList {{ background: {BG}; }}
     QScrollBar:vertical {{
         background: transparent; width: 10px; margin: 0;
     }}

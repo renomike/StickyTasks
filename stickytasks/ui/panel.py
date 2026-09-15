@@ -185,10 +185,16 @@ class StickyPanel(QWidget):
 
     def _scroll(self) -> QWidget:
         self.scroll = QScrollArea(self)
+        self.scroll.setObjectName("TaskScroll")
         self.scroll.setWidgetResizable(True)
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # The viewport is a separate widget from the scroll area and does not
+        # inherit its background, which leaves an empty list showing the
+        # platform's default light grey.
+        self.scroll.viewport().setObjectName("TaskScrollViewport")
 
         self.list_host = QWidget(self.scroll)
+        self.list_host.setObjectName("TaskList")
         self.list_layout = QVBoxLayout(self.list_host)
         self.list_layout.setContentsMargins(8, 4, 8, 8)
         self.list_layout.setSpacing(7)
