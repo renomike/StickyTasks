@@ -17,7 +17,7 @@ is not recognised, use `py`.
 ## Test it
 
 ```
-python -m pytest          # 132 tests, ~1.5s, no display needed
+python -m pytest          # 151 tests, ~3s, no display needed
 python -m pyflakes stickytasks/ tests/ run_stickytasks.py
 ```
 
@@ -37,6 +37,7 @@ stickytasks/
   models.py      Task, StatusEvent
   report.py      Markdown / plain-text report generation
   paths.py       per-OS data directory
+  winautostart.py  Windows sign-in registration (Run key)
   app.py         build() wires everything; run() enters the event loop
   ui/            everything Qt
 ```
@@ -64,6 +65,10 @@ if a new rule is about data rather than presentation, it belongs outside `ui/`.
   breaks the moment the data folder moves.
 - **Settings preserve unknown keys** (`Settings._extra`) so a file written by a
   newer build is not truncated by an older one.
+- **Starting at sign-in is not a setting.** The registry decides it, and Task
+  Manager's Startup tab can switch it off without telling the app, so a copy in
+  `settings.json` would be free to disagree. Read it through
+  `winautostart.is_enabled()` every time it is displayed.
 
 ## Qt gotchas already hit here
 
@@ -88,8 +93,16 @@ if a new rule is about data rather than presentation, it belongs outside `ui/`.
 `%APPDATA%\StickyTasks` on Windows; see `paths.py` for other platforms. Override
 with the `STICKYTASKS_HOME` environment variable — the tests rely on this.
 
-## Untested
+## Verified on a real Windows desktop
 
-`ui/winappbar.py` (reserving screen space via the Windows AppBar API) has never
-run on a real Windows desktop. It is off by default and fails safe to floating.
-Treat any change there as unverified until someone watches it work.
+`ui/winappbar.py` (reserving screen space via the Windows AppBar API) has now
+been driven on a real desktop: maximised windows do stop at the panel on both
+edges, and the reservation is released when the panel hides or quits. Two bugs
+came out of that session, both fixed — see the commit "Stop the panel drifting
+inwards when it reserves screen space" for the trap, which is that
+`availableGeometry()` excludes the panel's own reserved strip.
+
+`winautostart.py` was exercised the same way, with one caveat: a sandboxed shell
+can virtualise HKEY_CURRENT_USER, so a registry value written by the app may not
+be the one `reg.exe` reads back in such a shell. Check the Run key from a normal
+terminal or Task Manager's Startup tab, not from inside a sandbox.
