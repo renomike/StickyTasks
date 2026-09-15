@@ -13,6 +13,7 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 pytest.importorskip("PySide6.QtWidgets")
+from PySide6.QtCore import QRect  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from stickytasks.config import DOCK_LEFT, DOCK_RIGHT, Settings  # noqa: E402
@@ -27,7 +28,10 @@ from stickytasks.ui.panel import (  # noqa: E402
     VIEW_IN_WORK,
     VIEW_OPEN,
     StickyPanel,
+    dock_x,
+    undock_area,
 )
+from stickytasks.ui.winappbar import is_available as appbar_available  # noqa: E402
 
 
 @pytest.fixture(scope="session")
@@ -43,7 +47,19 @@ def panel(qapp, tmp_path):
     p = StickyPanel(db, settings, ImageStore(tmp_path / "images"))
     yield p
     p._tick.stop()
+    p._release_appbar()  # a test must never leave a strip of desktop reserved
     db.close()
+
+
+class FakeAppBar:
+    """Stands in for the Windows AppBar so the release paths run anywhere."""
+
+    def __init__(self):
+        self.unregistered = False
+
+    def unregister(self):
+        self.unregistered = True
+        return True
 
 
 def seed(panel, n=3):
@@ -207,6 +223,48 @@ def test_geometry_hugs_the_chosen_edge(panel):
     assert panel.geometry().left() == area.left()
 
 
+def test_reserving_docks_against_the_screen_not_its_own_reserved_strip():
+    """Regression: the panel used to walk inwards by its own width.
+
+    Once the AppBar reservation is live the work area no longer includes the
+    strip the panel sits in, so measuring from it moved the panel inwards every
+    time the geometry was reapplied — 1540, then 1160, then 780.
+    """
+    screen = QRect(0, 0, 1920, 1080)
+    reserved = QRect(0, 0, 1540, 1032)  # our own 380px strip already taken out
+
+    x = dock_x(screen, reserved, DOCK_RIGHT, 380, reserving=True)
+    assert x == 1540
+    # Reapplying with the same shrunken work area must not move it again.
+    assert dock_x(screen, reserved, DOCK_RIGHT, 380, reserving=True) == x
+    assert dock_x(screen, reserved, DOCK_LEFT, 380, reserving=True) == 0
+
+
+def test_floating_docks_inside_the_work_area():
+    """Without a reservation the panel sits beside the taskbar, not under it."""
+    screen = QRect(0, 0, 1920, 1080)
+    work = QRect(0, 0, 1870, 1080)  # taskbar down the right-hand edge
+
+    assert dock_x(screen, work, DOCK_RIGHT, 380, reserving=False) == 1490
+
+
+def test_giving_the_reservation_back_measures_as_if_the_strip_were_already_back():
+    """Regression: turning the setting off moved the panel inwards by a width.
+
+    The shell widens the work area asynchronously, so the rectangle Qt reports
+    the instant the reservation is released is still a strip short.
+    """
+    screen = QRect(0, 0, 1920, 1080)
+    stale = QRect(0, 0, 1540, 1032)  # our own 380px band not back yet
+
+    area = undock_area(stale, DOCK_RIGHT, 380)
+    assert area.right() == screen.right()
+    assert dock_x(screen, area, DOCK_RIGHT, 380, reserving=False) == 1540
+
+    assert undock_area(QRect(380, 0, 1540, 1032), DOCK_LEFT, 380).left() == 0
+    assert undock_area(stale, DOCK_RIGHT, 0) == stale  # released nothing, add nothing
+
+
 def test_panel_width_is_clamped(panel):
     panel.settings.panel_width = 50
     panel.apply_geometry()
@@ -251,10 +309,31 @@ def test_midnight_rollover_triggers_a_reload(panel, monkeypatch):
     assert calls == [1]
 
 
-def test_no_appbar_is_registered_off_windows(panel):
+def test_no_appbar_is_registered_where_the_platform_has_none(panel):
     panel.settings.reserve_screen_space = True
     panel.apply_geometry()
-    assert panel._appbar is None  # AppBar is Windows-only; must degrade quietly
+    # AppBar is a Windows extra: everywhere else the setting degrades quietly.
+    assert panel._appbar is None or appbar_available()
+
+
+def test_hiding_to_the_tray_gives_the_reserved_strip_back(panel):
+    """A hidden panel must not fence maximised windows out of the strip."""
+    bar = FakeAppBar()
+    panel._appbar = bar
+    panel._reserved_width = 380
+    panel.hide_panel()
+
+    assert bar.unregistered
+    assert panel._appbar is None
+    assert panel._reserved_width == 0
+
+
+def test_releasing_reports_the_width_it_handed_back(panel):
+    panel._appbar = FakeAppBar()
+    panel._reserved_width = 380
+
+    assert panel._release_appbar() == 380
+    assert panel._release_appbar() == 0  # nothing left to give back
 
 
 def test_empty_list_area_uses_the_dark_theme(panel):

@@ -64,6 +64,35 @@ SORT_PROJECT = "Project"
 SORT_NEWEST = "Newest"
 
 
+def dock_x(screen_rect, work_rect, edge: str, width: int, reserving: bool) -> int:
+    """Left edge for a panel of `width` docked to `edge` of a screen.
+
+    When the panel reserves screen space, the work area has already had the
+    panel's own strip taken out of it, so that is the one rectangle it must not
+    measure from: doing so walks the panel inwards by its own width every time
+    the geometry is reapplied.  Reserving docks against the physical screen
+    instead and lets the shell hand back what it grants; floating docks against
+    the work area so it sits beside the taskbar rather than under it.
+    """
+    rect = screen_rect if reserving else work_rect
+    return rect.left() if edge == DOCK_LEFT else rect.right() - width + 1
+
+
+def undock_area(work_rect, edge: str, released_width: int):
+    """`work_rect` with a strip the panel just stopped reserving added back.
+
+    The shell only widens the work area once it has broadcast the change, so
+    immediately after handing a reservation back the rectangle Qt reports is
+    still a strip short.  Nobody else can tell us it is stale, but we know: we
+    are the ones who just released it.
+    """
+    if not released_width:
+        return work_rect
+    if edge == DOCK_LEFT:
+        return work_rect.adjusted(-released_width, 0, 0, 0)
+    return work_rect.adjusted(0, 0, released_width, 0)
+
+
 class StickyPanel(QWidget):
     quit_requested = Signal()
 
@@ -75,6 +104,7 @@ class StickyPanel(QWidget):
         self._cards: list[TaskCard] = []
         self._today = date.today()
         self._appbar: Optional[AppBar] = None
+        self._reserved_width = 0
         self._quitting = False
         self._drag_origin: Optional[QPoint] = None
         self._resize_origin: Optional[tuple[int, int]] = None
@@ -298,19 +328,33 @@ class StickyPanel(QWidget):
         screen = self.target_screen()
         if screen is None:
             return
-        area = screen.availableGeometry()
+        reserving = self._wants_appbar()
+        # Release before measuring, then measure as if the strip were already
+        # back: docking against a work area with our own band still cut out of
+        # it is what used to walk the panel inwards a width at a time.
+        given_back = 0 if reserving else self._release_appbar()
+        area = undock_area(screen.availableGeometry(), self.settings.dock_edge, given_back)
         width = max(MIN_WIDTH, min(MAX_WIDTH, self.settings.panel_width))
-        x = area.left() if self.settings.dock_edge == DOCK_LEFT else area.right() - width + 1
+        x = dock_x(screen.geometry(), area, self.settings.dock_edge, width, reserving)
         self.setGeometry(x, area.top(), width, area.height())
         self._sync_appbar(area, width, x)
 
+    def _wants_appbar(self) -> bool:
+        return bool(self.settings.reserve_screen_space) and appbar_available()
+
+    def _release_appbar(self) -> int:
+        """Hand the reserved strip back to the desktop; returns its width."""
+        if self._appbar is None:
+            return 0
+        self._appbar.unregister()
+        self._appbar = None
+        width, self._reserved_width = self._reserved_width, 0
+        return width
+
     def _sync_appbar(self, area, width: int, x: int) -> None:
         """Register, update or drop the Windows AppBar reservation."""
-        want = self.settings.reserve_screen_space and appbar_available()
-        if not want:
-            if self._appbar is not None:
-                self._appbar.unregister()
-                self._appbar = None
+        if not self._wants_appbar():
+            self._release_appbar()
             return
         if self._appbar is None:
             self._appbar = AppBar(int(self.winId()))
@@ -322,7 +366,9 @@ class StickyPanel(QWidget):
         )
         if granted:
             left, top, right, bottom = granted
-            self.setGeometry(left, top, max(MIN_WIDTH, right - left), max(100, bottom - top))
+            width = max(MIN_WIDTH, right - left)
+            self.setGeometry(left, top, width, max(100, bottom - top))
+        self._reserved_width = width
 
     def eventFilter(self, watched, event) -> bool:  # noqa: N802 (Qt naming)
         if watched is self.grip:
@@ -576,6 +622,9 @@ class StickyPanel(QWidget):
         self.activateWindow()
 
     def hide_panel(self) -> None:
+        # Hidden means gone: keeping the reservation would fence maximised
+        # windows out of a strip nothing is drawing in.
+        self._release_appbar()
         self.hide()
 
     def _on_escape(self) -> None:
@@ -586,9 +635,7 @@ class StickyPanel(QWidget):
 
     def _quit(self) -> None:
         self._quitting = True
-        if self._appbar is not None:
-            self._appbar.unregister()
-            self._appbar = None
+        self._release_appbar()
         if self.tray is not None:
             self.tray.hide()
         self.quit_requested.emit()
@@ -596,8 +643,7 @@ class StickyPanel(QWidget):
 
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 (Qt naming)
         if self._quitting or self.tray is None:
-            if self._appbar is not None:
-                self._appbar.unregister()
+            self._release_appbar()
             event.accept()
             return
         # With a tray icon present, closing hides rather than exits — otherwise
