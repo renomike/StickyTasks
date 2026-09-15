@@ -144,6 +144,13 @@ edge the way the taskbar does. Two honest caveats:
 
 Everything else in the app is covered by the automated tests described below.
 
+## Picking this up in a new session
+
+`CLAUDE.md` is read automatically by Claude Code whenever it starts in this
+folder: how to run and test, the architecture, and the rules that matter.
+`docs/HANDOFF.md` records why the design is the way it is, what is verified and
+what is not, and what to try first on a real Windows desktop.
+
 ## Running the tests
 
 ```
