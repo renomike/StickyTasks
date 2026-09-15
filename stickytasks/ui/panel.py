@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .. import winautostart
 from ..config import DOCK_LEFT, Settings
 from ..db import Database
 from ..humanize import plural
@@ -578,7 +579,22 @@ class StickyPanel(QWidget):
             return
         updated = dialog.result_settings()
         updated.save()
+        self._apply_autostart(dialog.autostart_wanted())
         self.apply_settings(updated)
+
+    def _apply_autostart(self, wanted: Optional[bool]) -> None:
+        """Write the sign-in registration, which lives outside settings.json."""
+        if wanted is None or winautostart.set_enabled(wanted):
+            return
+        refused = (
+            "Windows would not let StickyTasks change its own sign-in entry, "
+            "which usually means a policy on a managed machine."
+        )
+        by_hand = (
+            "You can still set it up by hand: press Win+R, run shell:startup, "
+            "and put a shortcut to StickyTasks.bat in the folder that opens."
+        )
+        QMessageBox.warning(self, "StickyTasks", refused + "\n\n" + by_hand)
 
     def open_report(self) -> None:
         dialog = ReportDialog(self.db, self.settings.font_size, parent=self)

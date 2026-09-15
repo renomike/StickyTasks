@@ -13,6 +13,8 @@ generate a report of everything you finished in a date range.
 
 - **Docks to a screen edge.** Pick the monitor and the left or right edge; the
   panel fills that edge from the top of the work area to the bottom.
+- **Starts with Windows if you want it to.** One checkbox in Settings, no
+  installer.
 - **Colours tasks by due date.** Six bands by default (overdue → red, more than
   two weeks out → green). Every threshold and colour is editable.
 - **Rich-text notes with images.** Bold, italic, underline, strikethrough,
@@ -40,8 +42,18 @@ python run_stickytasks.py
 ```
 
 On Windows, double-clicking **StickyTasks.bat** launches it without a console
-window. To start it with Windows, press `Win+R`, run `shell:startup`, and put a
-shortcut to that .bat file in the folder that opens.
+window.
+
+To have the panel there every time you sign in, tick **Start StickyTasks when I
+sign in to Windows** in Settings → Placement. That writes a single value under
+your own account's Run key: nothing is installed, and nobody else who uses the PC
+is affected. It appears in Task Manager's Startup tab, and turning it off there
+turns the checkbox off too. The entry records the interpreter and script path as
+they are when you tick the box, so untick and re-tick it if you move this folder.
+
+If a policy on a managed machine refuses that write, the manual route still
+works: press `Win+R`, run `shell:startup`, and put a shortcut to the .bat file in
+the folder that opens.
 
 ## Where your data lives
 

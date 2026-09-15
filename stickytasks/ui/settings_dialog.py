@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from .. import colors as colormod
+from .. import winautostart
 from ..colors import Band
 from ..config import DOCK_LEFT, DOCK_RIGHT, Settings
 from .icons import swatch_icon
@@ -132,6 +133,27 @@ class SettingsDialog(QDialog):
         self.chk_start_hidden = QCheckBox("Start minimised to the system tray", box)
         self.chk_start_hidden.setChecked(self._settings.start_hidden)
         box_layout.addWidget(self.chk_start_hidden)
+
+        # Windows, not settings.json, decides whether this starts at sign-in, so
+        # the box is filled in from what Windows actually has registered.
+        self.chk_autostart = QCheckBox("Start StickyTasks when I sign in to Windows", box)
+        self.chk_autostart.setChecked(winautostart.is_enabled())
+        box_layout.addWidget(self.chk_autostart)
+
+        auto_note = QLabel(
+            "Registered under your own account, so nothing is installed and nobody "
+            "else who uses this PC is affected. It appears in Task Manager's Startup "
+            "tab, and turning it off there turns this off too.",
+            box,
+        )
+        auto_note.setObjectName("FooterLabel")
+        auto_note.setWordWrap(True)
+        box_layout.addWidget(auto_note)
+        if not winautostart.is_available():
+            self.chk_autostart.setEnabled(False)
+            self.chk_autostart.setChecked(False)
+            elsewhere = f"Disabled here: this is {sys.platform}, not Windows."
+            auto_note.setText(auto_note.text() + "\n\n" + elsewhere)
         layout.addWidget(box)
         layout.addStretch(1)
         return page
@@ -309,3 +331,14 @@ class SettingsDialog(QDialog):
 
         s.bands = self._bands_from_table()
         return s
+
+    def autostart_wanted(self) -> Optional[bool]:
+        """What the sign-in checkbox asks for, or None if nothing need change.
+
+        Sign-in registration is a registry entry rather than a setting, so it is
+        applied separately from :meth:`result_settings`.
+        """
+        if not winautostart.is_available():
+            return None
+        wanted = self.chk_autostart.isChecked()
+        return None if wanted == winautostart.is_enabled() else wanted
